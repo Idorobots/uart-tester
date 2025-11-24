@@ -10,11 +10,11 @@
 
 uint8_t LEDS_BAR[] = {PB1, PB0, PA7, PA6, PA5, PA4, PA3, PA2};
 
-#define IN_PULLUP_PIN PB12
-#define IN_DATA_PIN PB13
-#define IN_CLK_PIN PB14
+#define IN_PULLUP_PIN PB13
+#define IN_DATA_PIN PB14
 #define IN_EN_PIN PB15
-#define IN_LD_PIN PA8
+#define IN_LD_PIN PA9
+#define IN_CLK_PIN PA8
 
 #define OUT_CLR_PIN PB9
 #define OUT_CLK_PIN PB8
@@ -42,8 +42,42 @@ void bar(uint8_t value) {
   }
 }
 
+void disableIn() {
+  digitalWrite(IN_EN_PIN, HIGH);
+}
+
+void enableIn() {
+  digitalWrite(IN_EN_PIN, LOW);
+}
+
+void pulseClk(uint8_t pin) {
+  digitalWrite(pin, HIGH);
+  delay(CLK_DELAY);
+  digitalWrite(pin, LOW);
+  delay(CLK_DELAY);
+}
+
 uint32_t shiftDataIn() {
-  return 0;
+  uint32_t value = 0;
+
+  disableIn();
+
+  digitalWrite(IN_LD_PIN, LOW);
+  delay(CLK_DELAY);
+  digitalWrite(IN_LD_PIN, HIGH);
+  delay(CLK_DELAY);
+
+  enableIn();
+
+  for(int8_t i = 31; i >= 0; i--) {
+    if (digitalRead(IN_DATA_PIN) == HIGH) {
+      value = value | (((uint32_t)0x1) << i);
+    }
+
+    pulseClk(IN_CLK_PIN);
+  }
+
+  return value;
 }
 
 void pullUp() {
@@ -60,13 +94,6 @@ void disableOut() {
 
 void enableOut() {
   digitalWrite(OUT_EN_PIN, LOW);
-}
-
-void pulseClk(uint8_t pin) {
-  digitalWrite(pin, HIGH);
-  delay(CLK_DELAY);
-  digitalWrite(pin, LOW);
-  delay(CLK_DELAY);
 }
 
 void clearOut() {
@@ -114,9 +141,12 @@ void setup() {
   pullDown();
   pinMode(IN_DATA_PIN, INPUT);
   pinMode(IN_CLK_PIN, OUTPUT);
+  digitalWrite(IN_CLK_PIN, LOW);
   pinMode(IN_EN_PIN, OUTPUT);
+  digitalWrite(IN_EN_PIN, LOW);
   pinMode(IN_LD_PIN, OUTPUT);
-  shiftDataIn();
+  digitalWrite(IN_LD_PIN, HIGH);
+  disableIn();
 
   pinMode(OUT_DATA_PIN, OUTPUT);
   digitalWrite(OUT_DATA_PIN, LOW);
@@ -135,9 +165,8 @@ void setup() {
 uint8_t value = 0;
 
 void loop() {
-
   ledOn(LED_BUILTIN);
-  Serial.println("Hello world hehe!");
+
   bar((1<<(value%9))-1);
 
   if (value % 2) {
@@ -149,6 +178,18 @@ void loop() {
     ledOn(LED_FAIL);
     shiftDataOut(0x55555555);
   }
+
+  pullDown();
+  uint32_t v = shiftDataIn();
+  Serial.print("Pull down: ");
+  Serial.print(v, BIN);
+  Serial.println();
+
+  pullUp();
+  v = shiftDataIn();
+  Serial.print("Pull up:   ");
+  Serial.print(v, BIN);
+  Serial.println();
 
   delay(200);
 
