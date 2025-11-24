@@ -122,7 +122,7 @@ void shiftDataOut(uint32_t data) {
 }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   pinMode(LED_BUILTIN, OUTPUT);
   ledOff(LED_BUILTIN);
@@ -162,38 +162,96 @@ void setup() {
   disableOut();
 }
 
-uint8_t value = 0;
+char* strrev(char* str, size_t len) {
+    if (!str) {
+        return str;
+    }
+
+    int i = 0;
+    int j = len - 1;
+
+    while (i < j) {
+        char c = str[i];
+        str[i] = str[j];
+        str[j] = c;
+        i++;
+        j--;
+    }
+
+    return str;
+}
 
 void loop() {
-  ledOn(LED_BUILTIN);
+  if (Serial.available() > 0) {
+    ledOn(LED_BUILTIN);
 
-  bar((1<<(value%9))-1);
+    char cmd = Serial.read();
 
-  if (value % 2) {
-    ledOn(LED_PASS);
-    ledOff(LED_FAIL);
-    shiftDataOut(0xFF00FF00);
-  } else {
-    ledOff(LED_PASS);
-    ledOn(LED_FAIL);
-    shiftDataOut(0x55555555);
+    switch(cmd) {
+      case 'r':
+      case 'R': {
+        setup();
+      }
+      break;
+
+      case 'i':
+      case 'I': {
+        pullDown();
+        uint32_t down = shiftDataIn();
+
+        pullUp();
+        uint32_t up = shiftDataIn();
+
+        char state[33] = {0};
+        for(int8_t i = 31; i >= 0; i--) {
+          uint32_t u = up & (1 << i);
+          uint32_t d = down & (1 << i);
+
+          if (u != d)      state[i] = 'Z';
+          else if (u == 0) state[i] = '0';
+          else             state[i] = '1';
+        }
+        Serial.println(strrev(state, 32));
+      }
+      break;
+
+      case 'o':
+      case 'O': {
+        char state[33] = {0};
+        Serial.readBytes(state, 32);
+        shiftDataOut(std::stoi(strrev(state, 32), nullptr, 2));
+      }
+      break;
+
+      case 'b':
+      case 'B': {
+        char state[9] = {0};
+        Serial.readBytes(state, 8);
+        bar(std::stoi(strrev(state, 8), nullptr, 2));
+      }
+      break;
+
+      case 'p':
+      case 'P': {
+        char state[2] = {0};
+        Serial.readBytes(state, 1);
+        if (state[0] == '1') ledOn(LED_PASS);
+        else                 ledOff(LED_PASS);
+      }
+      break;
+      case 'f':
+      case 'F': {
+        char state[2] = {0};
+        Serial.readBytes(state, 1);
+        if (state[0] == '1') ledOn(LED_FAIL);
+        else                 ledOff(LED_FAIL);
+      }
+      break;
+
+      default:
+        // Nothing to do.
+        break;
+    }
   }
-
-  pullDown();
-  uint32_t v = shiftDataIn();
-  Serial.print("Pull down: ");
-  Serial.print(v, BIN);
-  Serial.println();
-
-  pullUp();
-  v = shiftDataIn();
-  Serial.print("Pull up:   ");
-  Serial.print(v, BIN);
-  Serial.println();
-
-  delay(200);
-
   ledOff(LED_BUILTIN);
-  delay(800);
-  value++;
 }
