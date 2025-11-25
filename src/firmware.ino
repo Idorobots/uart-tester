@@ -22,7 +22,9 @@ uint8_t LEDS_BAR[] = {PB1, PB0, PA7, PA6, PA5, PA4, PA3, PA2};
 #define OUT_EN_PIN PB6
 #define OUT_DATA_PIN PB4
 
-#define CLK_DELAY 1
+#define CLK_DELAY 0
+#define LD_DELAY 1
+#define CMD_TIMEOUT 200
 
 void ledOn(uint8_t led) {
   digitalWrite(led, LOW);
@@ -52,9 +54,9 @@ void enableIn() {
 
 void pulseClk(uint8_t pin) {
   digitalWrite(pin, HIGH);
-  delay(CLK_DELAY);
+  if(CLK_DELAY != 0) delayMicroseconds(CLK_DELAY);
   digitalWrite(pin, LOW);
-  delay(CLK_DELAY);
+  if(CLK_DELAY != 0) delayMicroseconds(CLK_DELAY);
 }
 
 uint32_t shiftDataIn() {
@@ -63,9 +65,9 @@ uint32_t shiftDataIn() {
   disableIn();
 
   digitalWrite(IN_LD_PIN, LOW);
-  delay(CLK_DELAY);
+  delayMicroseconds(LD_DELAY);
   digitalWrite(IN_LD_PIN, HIGH);
-  delay(CLK_DELAY);
+  delayMicroseconds(LD_DELAY);
 
   enableIn();
 
@@ -122,7 +124,7 @@ void shiftDataOut(uint32_t data) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(576000);
 
   pinMode(LED_BUILTIN, OUTPUT);
   ledOff(LED_BUILTIN);
@@ -181,11 +183,22 @@ char* strrev(char* str, size_t len) {
     return str;
 }
 
+uint32_t bintoi(char* str, size_t len) {
+  uint32_t value = 0;
+
+  for(uint8_t i = 0; i < len; i++) {
+    value |= (str[i] == '1') ? (1 << i) : 0;
+  }
+
+  return value;
+}
+
 void loop() {
   if (Serial.available() > 0) {
     ledOn(LED_BUILTIN);
 
     char cmd = Serial.read();
+    Serial.setTimeout(CMD_TIMEOUT);
 
     switch(cmd) {
       case 'r':
@@ -219,7 +232,7 @@ void loop() {
       case 'O': {
         char state[33] = {0};
         Serial.readBytes(state, 32);
-        shiftDataOut(std::stoi(strrev(state, 32), nullptr, 2));
+        shiftDataOut(bintoi(state, 32));
       }
       break;
 
@@ -227,7 +240,7 @@ void loop() {
       case 'B': {
         char state[9] = {0};
         Serial.readBytes(state, 8);
-        bar(std::stoi(strrev(state, 8), nullptr, 2));
+        bar(bintoi(state, 8) & 0xff);
       }
       break;
 
