@@ -7,11 +7,15 @@ import serial
 # A test for CMOS SRAM chips.
 
 PATTERNS = [b"10101010", b"01010101", b"11110000", b"00001111", b"11001100", b"00110011", b"11111111", b"00000000"];
-ZERO = b"00000000"
-HIGHZ = ZERO #b"ZZZZZZZZ" # FIXME
 
-DEBUG = True
+ZERO = b"00000000"
+HIGHZ = b"ZZZZZZZZ"
+
+DEBUG = False
+READWRITE = True
 RETENTION = False
+SIZING = False
+
 tester = None
 
 failures = 0
@@ -113,43 +117,61 @@ def check_sram(cs2_pin, we, oe, cs1, cs2, addr, data_str):
     return read_inputs()
 
 def test_sram(cs2_pin, addr_lines):
-    test(check_sram(cs2_pin, False, False, False, True, 0x0000, ZERO), HIGHZ, None, "Outputs floating when no CS1")
+    test(check_sram(cs2_pin, False, False, False, True, 0x0000, ZERO), HIGHZ, 0x0000, "Outputs floating when no CS1")
 
     if cs2_pin != None:
-        test(check_sram(cs2_pin, False, False, False, False, 0x0000, ZERO), HIGHZ, None, "Outputs floating when no CS")
-        test(check_sram(cs2_pin, False, False, True, False, 0x0000, ZERO), HIGHZ, None, "Outputs floating when no CS2")
+        test(check_sram(cs2_pin, False, False, False, False, 0x0000, ZERO), HIGHZ, 0x0000, "Outputs floating when no CS")
+        test(check_sram(cs2_pin, False, False, True, False, 0x0000, ZERO), HIGHZ, 0x0000, "Outputs floating when no CS2")
 
     addr_max = 2**addr_lines
+    toggle = True
 
-    for i, pattern in enumerate(PATTERNS):
-        b = (1 << (i + 1)) - 1
-        toggle = True
-        set_bar(b)
-
-        print("Pattern: ", pattern)
-
-        for addr in range(addr_max):
+    # Check if memory size is correct
+    if SIZING:
+        for addr in range(0, addr_max):
             if(addr % 128 == 0):
                 toggle = not toggle
-                set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
+                set_bar(toggle and 1 or 0)
+            test(check_sram(cs2_pin, True, False, True, True, addr, ZERO), ZERO, addr, "Write zeros")
 
-            # Write data
-            test(check_sram(cs2_pin, True, False, True, True, addr, pattern), pattern, addr, "Writing data works")
-            # Turn off
-            test(check_sram(cs2_pin, False, False, False, False, addr, ZERO), HIGHZ, addr, "Floating after write")
-            # Read data back
-            test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), pattern, addr, "Reading data works")
+        needle = b"10100101"
+        test(check_sram(cs2_pin, True, False, True, True, 0x0000, needle), needle, 0x0000, "Store needle")
 
-        if RETENTION:
+        for addr in range(1, addr_max):
+            if(addr % 128 == 0):
+                toggle = not toggle
+                set_bar(toggle and 1 or 0)
+            test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), ZERO, addr, "Needle not in haystack")
+
+    if READWRITE:
+        for i, pattern in enumerate(PATTERNS):
+            b = (1 << (i + 1)) - 1
+            set_bar(b)
+
+            print("Pattern: ", pattern)
+
             for addr in range(addr_max):
                 if(addr % 128 == 0):
                     toggle = not toggle
                     set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
-                # Read data back
-                test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), pattern, addr, "Data retained")
+
+                # Write data
+                test(check_sram(cs2_pin, True, False, True, True, addr, pattern), pattern, addr, "Writing data works")
                 # Turn off
-                test(check_sram(cs2_pin, False, False, False, False, addr, ZERO), HIGHZ, addr, "Floating after read")
-    pass
+                test(check_sram(cs2_pin, False, False, False, False, addr, ZERO), HIGHZ, addr, "Floating after write")
+                # Read data back
+                test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), pattern, addr, "Reading data works")
+
+            if RETENTION:
+                for addr in range(addr_max):
+                    if(addr % 128 == 0):
+                        toggle = not toggle
+                        set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
+                    # Read data back
+                    test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), pattern, addr, "Data retained")
+                    # Turn off
+                    test(check_sram(cs2_pin, False, False, False, False, addr, ZERO), HIGHZ, addr, "Floating after read")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -158,12 +180,16 @@ if __name__ == "__main__":
                     epilog='')
     parser.add_argument('--port', type=str, default="/dev/ttyACM0")
     parser.add_argument('-s', '--size', type=int, choices=[8, 32, 128, 256, 512])
-    parser.add_argument('-r', '--retention', action='store_true', default=False)
+    parser.add_argument('--retention', action='store_true', default=False)
+    parser.add_argument('--sizing', action='store_true', default=False)
+    parser.add_argument('--no-read-write', action='store_false', default=True)
     parser.add_argument('--debug', action='store_true', default=False)
 
     args = parser.parse_args()
     DEBUG = args.debug
     RETENTION = args.retention
+    SIZING = args.sizing
+    READWRITE = args.no_read_write
 
     ser = serial.Serial(port = args.port, baudrate = 576000)
 
