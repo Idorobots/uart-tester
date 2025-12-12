@@ -8,7 +8,7 @@
 #define LED_PASS PA0
 #define LED_FAIL PA1
 
-uint8_t LEDS_BAR[] = {PB1, PB0, PA7, PA6, PA5, PA4, PA3, PA2};
+uint8_t LEDS_BAR[] = {PA2, PA3, PA4, PA5, PA6, PA7, PB0, PB1};
 
 #define IN_PULLUP_PIN PB13
 #define IN_DATA_PIN PB14
@@ -71,7 +71,7 @@ uint32_t shiftDataIn() {
 
   enableIn();
 
-  for(int8_t i = 31; i >= 0; i--) {
+  for(uint8_t i = 0; i < 32; i++) {
     if (digitalRead(IN_DATA_PIN) == HIGH) {
       value = value | (((uint32_t)0x1) << i);
     }
@@ -106,7 +106,7 @@ void clearOut() {
 }
 
 void shiftDataOut(uint32_t data) {
-  for(uint8_t i = 0; i < 32; i++) {
+  for(int8_t i = 31; i >= 0; i--) {
     if ((data & (1 << i)) == 0) {
       digitalWrite(OUT_DATA_PIN, LOW);
     } else {
@@ -164,35 +164,6 @@ void setup() {
   disableOut();
 }
 
-char* strrev(char* str, size_t len) {
-    if (!str) {
-        return str;
-    }
-
-    int i = 0;
-    int j = len - 1;
-
-    while (i < j) {
-        char c = str[i];
-        str[i] = str[j];
-        str[j] = c;
-        i++;
-        j--;
-    }
-
-    return str;
-}
-
-uint32_t bintoi(char* str, size_t len) {
-  uint32_t value = 0;
-
-  for(uint8_t i = 0; i < len; i++) {
-    value |= (str[i] == '1') ? (1 << i) : 0;
-  }
-
-  return value;
-}
-
 void loop() {
   if (Serial.available() > 0) {
     ledOn(LED_BUILTIN);
@@ -224,29 +195,33 @@ void loop() {
           else if (u == 0) state[i] = '0';
           else             state[i] = '1';
         }
-        Serial.println(strrev(state, 32));
+        Serial.println(state);
       }
       break;
 
       case 'o':
       case 'O': {
-        char state[33] = {0};
-        Serial.readBytes(state, 32);
-        shiftDataOut(bintoi(state, 32));
+        union {
+          char bytes[4];
+          uint32_t value;
+        } state;
+
+        Serial.readBytes(state.bytes, 4);
+        shiftDataOut(state.value);
       }
       break;
 
       case 'b':
       case 'B': {
-        char state[9] = {0};
-        Serial.readBytes(state, 8);
-        bar(bintoi(state, 8) & 0xff);
+        char state[1] = {0};
+        Serial.readBytes(state, 1);
+        bar(state[0]);
       }
       break;
 
       case 'p':
       case 'P': {
-        char state[2] = {0};
+        char state[1] = {0};
         Serial.readBytes(state, 1);
         if (state[0] == '1') ledOn(LED_PASS);
         else                 ledOff(LED_PASS);
@@ -254,7 +229,7 @@ void loop() {
       break;
       case 'f':
       case 'F': {
-        char state[2] = {0};
+        char state[1] = {0};
         Serial.readBytes(state, 1);
         if (state[0] == '1') ledOn(LED_FAIL);
         else                 ledOff(LED_FAIL);

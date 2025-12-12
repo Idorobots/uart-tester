@@ -20,8 +20,10 @@ def test(actual, expected, info):
         failures = failures + 1
         print("Test failed: {}, {} != {}".format(info, expected, actual))
 
-def send(command):
-    tester.write(command + b"\n")
+def send(command, value = None):
+    tester.write(command)
+    if value != None:
+        tester.write(value)
 
 def read():
     return tester.read_until().strip()
@@ -38,12 +40,12 @@ def success():
     send(b"f0")
 
 def set_bar(value):
-    send(b"b" + bytes("{0:08b}".format(value), 'latin1'))
+    send(b"b", (value & 0xff).to_bytes(1, byteorder = 'little'))
 
 def set_outputs(value):
     if DEBUG:
-        print(value)
-    send(b"o" + value)
+        print("{0:032b}".format(value))
+    send(b"o", (value & 0xffffffff).to_bytes(4, byteorder = 'little'))
 
 def read_inputs():
     send(b"i")
@@ -86,7 +88,7 @@ def set_pio(clk, m1, iorq, rd, ein, e, cd, ba, data, portA, portB):
     value = value | (cd << 25)
     value = value | (ba << 24)
 
-    set_outputs(bytes("{0:032b}".format(value), 'latin1'))
+    set_outputs(value)
 
 def pio_reset():
     # Run some clock cycles during reset.

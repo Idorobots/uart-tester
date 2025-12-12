@@ -27,8 +27,10 @@ def test(actual, expected, addr, info):
         failures = failures + 1
         print("Test failed: {}, {} != {} at address {:04x}".format(info, expected, actual, addr))
 
-def send(command):
-    tester.write(command + b"\n")
+def send(command, value = None):
+    tester.write(command)
+    if value != None:
+        tester.write(value)
 
 def read():
     return tester.read_until().strip()
@@ -45,12 +47,12 @@ def success():
     send(b"f0")
 
 def set_bar(value):
-    send(b"b" + bytes("{0:08b}".format(value), 'latin1'))
+    send(b"b", (value & 0xff).to_bytes(1, byteorder = 'little'))
 
 def set_outputs(value):
     if DEBUG:
-        print(value)
-    send(b"o" + value)
+        print("{0:032b}".format(value))
+    send(b"o", (value & 0xffffffff).to_bytes(4, byteorder = 'little'))
 
 def read_inputs():
     send(b"i")
@@ -100,7 +102,7 @@ def read_inputs():
 # /WE: O31
 
 def check_sram(cs2_pin, we, oe, cs1, cs2, addr, data_str):
-    value = 0
+    value = int(data_str, 2)
     value = value | (addr << 8)
     if not we:
         value = value | (1 << 31)
@@ -111,9 +113,7 @@ def check_sram(cs2_pin, we, oe, cs1, cs2, addr, data_str):
     if cs2_pin != None and cs2:
         value = value | (1 << cs2_pin)
 
-    cmd = bytes("{0:032b}".format(value & 0xffffffff), 'latin1')[0:-8] + data_str
-
-    set_outputs(cmd)
+    set_outputs(value)
     return read_inputs()
 
 def test_sram(cs2_pin, addr_lines):
