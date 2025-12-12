@@ -3,63 +3,7 @@
 import sys
 import argparse
 import serial
-
-ZERO = b"00000000"
-HIGHZ = b"ZZZZZZZZ"
-
-DEBUG = False
-
-tester = None
-
-failures = 0
-
-def test(actual, expected, info):
-    global failures
-
-    if actual != expected:
-        failures = failures + 1
-        print("Test failed: {}, {} != {}".format(info, expected, actual))
-
-def send(command, value = None):
-    tester.write(command)
-    if value != None:
-        tester.write(value)
-
-def read():
-    return tester.read_until().strip()
-
-def reset():
-    send(b"r");
-
-def fail():
-    send(b"p0")
-    send(b"f1")
-
-def success():
-    send(b"p1")
-    send(b"f0")
-
-def set_bar(value):
-    send(b"b", (value & 0xff).to_bytes(1, byteorder = 'little'))
-
-def set_outputs(value):
-    if DEBUG:
-        print("{0:032b}".format(value))
-    send(b"o", (value & 0xffffffff).to_bytes(4, byteorder = 'little'))
-
-def read_inputs():
-    send(b"i")
-    raw = read()
-    value = {
-        'data': raw[0:8],
-        'portA': raw[8:16],
-        'portB': raw[16:24],
-        'interrupt': raw[24],
-        'eout': raw[25]
-    }
-    if DEBUG:
-        print(value)
-    return value
+from tester import Tester
 
 # Z80 PIO:
 # Data: I0-I7, O0-O7 via buffer
@@ -76,6 +20,31 @@ def read_inputs():
 # /INT: I24
 # EOUT: I25
 
+ZERO = b"00000000"
+HIGHZ = b"ZZZZZZZZ"
+
+tester = None
+
+failures = 0
+
+def test(actual, expected, info):
+    global failures
+
+    if actual != expected:
+        failures = failures + 1
+        print("Test failed: {}, {} != {}".format(info, expected, actual))
+
+def read_inputs():
+    raw = tester.read_inputs()
+    value = {
+        'data': raw[0:8],
+        'portA': raw[8:16],
+        'portB': raw[16:24],
+        'interrupt': raw[24],
+        'eout': raw[25]
+    }
+    return value
+
 def set_pio(clk, m1, iorq, rd, ein, e, cd, ba, data, portA, portB):
     value = (data & 0xff) | ((portA & 0xff) << 8) | ((portB & 0xff) << 16)
 
@@ -88,7 +57,7 @@ def set_pio(clk, m1, iorq, rd, ein, e, cd, ba, data, portA, portB):
     value = value | (cd << 25)
     value = value | (ba << 24)
 
-    set_outputs(value)
+    tester.set_outputs(value)
 
 def pio_reset():
     # Run some clock cycles during reset.
@@ -179,21 +148,18 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', default=False)
 
     args = parser.parse_args()
-    DEBUG = args.debug
 
-    ser = serial.Serial(port = args.port, baudrate = 576000)
+    tester = Tester(port = args.port, baudrate = 576000, DEBUG = args.debug)
 
-    with ser as s:
-        tester = s
-        try:
-            print("Testing Z80 PIO")
-            reset()
+    try:
+        print("Testing Z80 PIO")
+        tester.reset()
 
-            test_pio_output()
+        test_pio_output()
 
-            assert failures == 0, "Some tests have failed."
-            print("Test done!")
-            success()
+        assert failures == 0, "Some tests have failed."
+        print("Test done!")
+        tester.success()
 
-        except AssertionError:
-            fail()
+    except AssertionError:
+        tester.fail()

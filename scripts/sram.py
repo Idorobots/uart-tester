@@ -2,64 +2,9 @@
 
 import sys
 import argparse
-import serial
+from tester import Tester
 
 # A test for CMOS SRAM chips.
-
-PATTERNS = [b"10101010", b"01010101", b"11110000", b"00001111", b"11001100", b"00110011", b"11111111", b"00000000"];
-
-ZERO = b"00000000"
-HIGHZ = b"ZZZZZZZZ"
-
-DEBUG = False
-READWRITE = True
-RETENTION = False
-SIZING = False
-
-tester = None
-
-failures = 0
-
-def test(actual, expected, addr, info):
-    global failures
-
-    if actual != expected:
-        failures = failures + 1
-        print("Test failed: {}, {} != {} at address {:04x}".format(info, expected, actual, addr))
-
-def send(command, value = None):
-    tester.write(command)
-    if value != None:
-        tester.write(value)
-
-def read():
-    return tester.read_until().strip()
-
-def reset():
-    send(b"r");
-
-def fail():
-    send(b"p0")
-    send(b"f1")
-
-def success():
-    send(b"p1")
-    send(b"f0")
-
-def set_bar(value):
-    send(b"b", (value & 0xff).to_bytes(1, byteorder = 'little'))
-
-def set_outputs(value):
-    if DEBUG:
-        print("{0:032b}".format(value))
-    send(b"o", (value & 0xffffffff).to_bytes(4, byteorder = 'little'))
-
-def read_inputs():
-    send(b"i")
-    value = read()[-8:]
-    if DEBUG:
-        print(value)
-    return value
 
 # 512k SRAM (32 pin DIP):
 # Data: I0-I7, O0-O7 via latch
@@ -101,6 +46,25 @@ def read_inputs():
 # /OE: O30
 # /WE: O31
 
+PATTERNS = [b"10101010", b"01010101", b"11110000", b"00001111", b"11001100", b"00110011", b"11111111", b"00000000"];
+
+ZERO = b"00000000"
+HIGHZ = b"ZZZZZZZZ"
+
+READWRITE = True
+RETENTION = False
+SIZING = False
+
+tester = None
+failures = 0
+
+def test(actual, expected, addr, info):
+    global failures
+
+    if actual != expected:
+        failures = failures + 1
+        print("Test failed: {}, {} != {} at address {:04x}".format(info, expected, actual, addr))
+
 def check_sram(cs2_pin, we, oe, cs1, cs2, addr, data_str):
     value = int(data_str, 2)
     value = value | (addr << 8)
@@ -113,8 +77,8 @@ def check_sram(cs2_pin, we, oe, cs1, cs2, addr, data_str):
     if cs2_pin != None and cs2:
         value = value | (1 << cs2_pin)
 
-    set_outputs(value)
-    return read_inputs()
+    tester.set_outputs(value)
+    return tester.read_inputs()[-8:]
 
 def test_sram(cs2_pin, addr_lines):
     test(check_sram(cs2_pin, False, False, False, True, 0x0000, ZERO), HIGHZ, 0x0000, "Outputs floating when no CS1")
@@ -131,7 +95,7 @@ def test_sram(cs2_pin, addr_lines):
         for addr in range(0, addr_max):
             if(addr % 128 == 0):
                 toggle = not toggle
-                set_bar(toggle and 1 or 0)
+                tester.set_bar(toggle and 1 or 0)
             test(check_sram(cs2_pin, True, False, True, True, addr, ZERO), ZERO, addr, "Write zeros")
 
         needle = b"10100101"
@@ -140,20 +104,20 @@ def test_sram(cs2_pin, addr_lines):
         for addr in range(1, addr_max):
             if(addr % 128 == 0):
                 toggle = not toggle
-                set_bar(toggle and 1 or 0)
+                tester.set_bar(toggle and 1 or 0)
             test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), ZERO, addr, "Needle not in haystack")
 
     if READWRITE:
         for i, pattern in enumerate(PATTERNS):
             b = (1 << (i + 1)) - 1
-            set_bar(b)
+            tester.set_bar(b)
 
             print("Pattern: ", pattern)
 
             for addr in range(addr_max):
                 if(addr % 128 == 0):
                     toggle = not toggle
-                    set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
+                    tester.set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
 
                 # Write data
                 test(check_sram(cs2_pin, True, False, True, True, addr, pattern), pattern, addr, "Writing data works")
@@ -166,12 +130,11 @@ def test_sram(cs2_pin, addr_lines):
                 for addr in range(addr_max):
                     if(addr % 128 == 0):
                         toggle = not toggle
-                        set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
+                        tester.set_bar(toggle and (b | (1 << i)) or (b & ~(1 << i)))
                     # Read data back
                     test(check_sram(cs2_pin, False, True, True, True, addr, ZERO), pattern, addr, "Data retained")
                     # Turn off
                     test(check_sram(cs2_pin, False, False, False, False, addr, ZERO), HIGHZ, addr, "Floating after read")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -186,35 +149,32 @@ if __name__ == "__main__":
     parser.add_argument('--debug', action='store_true', default=False)
 
     args = parser.parse_args()
-    DEBUG = args.debug
     RETENTION = args.retention
     SIZING = args.sizing
     READWRITE = args.no_read_write
 
-    ser = serial.Serial(port = args.port, baudrate = 576000)
+    tester = Tester(args.port, baudrate = 576000, DEBUG = args.debug)
 
-    with ser as s:
-        tester = s
-        try:
-            print("Testing {}k SRAM".format(args.size))
-            reset()
+    try:
+        print("Testing {}k SRAM".format(args.size))
+        tester.reset()
 
-            if args.size == 512:
-                 test_sram(None, 19)
-            elif args.size == 256:
-                 test_sram(26, 18)
-            elif args.size == 128:
-                 test_sram(26, 17)
-            elif args.size == 32:
-                 test_sram(None, 15)
-            elif args.size == 8:
-                 test_sram(21, 13)
-            else:
-                 print("Unsuported RAM size specified.")
+        if args.size == 512:
+             test_sram(None, 19)
+        elif args.size == 256:
+             test_sram(26, 18)
+        elif args.size == 128:
+             test_sram(26, 17)
+        elif args.size == 32:
+             test_sram(None, 15)
+        elif args.size == 8:
+             test_sram(21, 13)
+        else:
+             print("Unsuported RAM size specified.")
 
-            assert failures == 0, "Some tests have failed."
-            print("Test done!")
-            success()
+        assert failures == 0, "Some tests have failed."
+        print("Test done!")
+        tester.success()
 
-        except AssertionError:
-            fail()
+    except AssertionError:
+        tester.fail()
