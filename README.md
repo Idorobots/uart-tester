@@ -26,9 +26,9 @@ Resets the state of the tester.
 Reads the inputs returning 0 or 1 or Z if the input is floating for each of the 32 inputs.
 
 ### Output
-`oXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`
+`oNNNN`
 
-Writes the Xs (1 or 0) to the 32 outputs.
+Writes the N bytes to the shift register. It's binary, little endian format for speed as the serial connection is on the slower side.
 
 ### Pass
 `pX`
@@ -44,3 +44,6 @@ Toggles the fail LED, X is 1 or 0.
 `bXXXXXXXX`
 
 Sets the state of the bar graph. X is 0 or 1.
+
+## Hardware
+The tester uses several 74HCT595 and 74HCT165 shift registers to provide 32 inputs and 32 outputs. There are optional LEDs for indicating a bar graph and pass/fail state.
