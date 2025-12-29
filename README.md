@@ -1,5 +1,8 @@
 # UART tester
 
+This is an STM32-based USB to GPIO adapter useful for testing various electronic circuits via "convenient" Python scripts. It's similar in spirit to Fabian Schuiki's https://github.com/fabianschuiki/superscalar-cpu/tree/master/tester except based on STM32, not FTDI chips.
+Oh and there's no schematic for mine, as I just cooked it on a protoboard. :shrug:
+
 ## STM32 UART via USB
 Repo: https://github.com/rogerclarkmelbourne/STM32duino-bootloader
 File: `generic_boot20_pc13.bin`
