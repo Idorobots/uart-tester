@@ -37,8 +37,8 @@ def test(actual, expected, info):
 def read_inputs():
     raw = tester.read_inputs()
     value = {
-        'data': raw[0:8],
-        'interrupt': raw[8:9]
+        'data': raw[-8:],
+        'interrupt': raw[-9:-8]
     }
     return value
 
@@ -58,8 +58,7 @@ def write_reg(reg, data):
 
 def read_reg(reg):
     set_rtc(1, 1, 1, reg, 0x00)
-    set_rtc(0, 1, 0, reg, 0x00)
-    value = read_inputs()
+    value = set_rtc(0, 1, 0, reg, 0x00)
     set_rtc(1, 1, 1, reg, 0x00)
     return value
 
@@ -73,20 +72,26 @@ def bits(val):
     return bytes("{0:08b}".format(val & 0xff), 'latin1')
 
 def test_rtc():
+    # Reset everything.
+    write_reg(0x11, 0x00)
+    read_reg(0x10)
+
     # Initial sanity check
     set_rtc(1, 1, 1, 0x00, 0x00)
     init = read_inputs()
     test(init['data'], HIGHZ, "Data floating after startup")
     test(init['interrupt'], SET, "No interrupt after startup")
 
-    # Reset interrupts
-    write_reg(0x10, 0x00)
-    check_reg(0x10, ZERO, SET, "Interrupts disabled")
-
     # Stop, 24h, 36.768 KHz crystal
     write_reg(0x11, 0x04)
 
-    # Initialize time
+    # Reset interrupts
+    write_reg(0x10, 0x00)
+    intsOff = read_reg(0x10)
+    test(intsOff['interrupt'], SET, "Interrupts disabled - int")
+    test(intsOff['data'][0:5], b"00000", "Interrupts disabled - mask")
+
+    # Initialize time to some values
     write_reg(0x00, 0)
     write_reg(0x01, 12)
     write_reg(0x02, 30)
@@ -96,8 +101,8 @@ def test_rtc():
     write_reg(0x06, 25)
     write_reg(0x07, 5)
 
-    hsecs = check_reg(0x00, bits(0), SET, "Value set")
-    check_reg(0x01, bits(12), SET, "Value set")
+    check_reg(0x00, bits(0), SET, "Value set")
+    secs = check_reg(0x01, bits(12), SET, "Value set")
     check_reg(0x02, bits(30), SET, "Value set")
     check_reg(0x03, bits(23), SET, "Value set")
     check_reg(0x04, bits(5), SET, "Value set")
@@ -105,12 +110,24 @@ def test_rtc():
     check_reg(0x06, bits(25), SET, "Value set")
     check_reg(0x07, bits(5), SET, "Value set")
 
-    # Run, 24h, 4MHz crystal
-    write_reg(0x11, 0x0f)
+    # Run, 24h, 36.768k crystal
+    write_reg(0x11, 0x0C)
 
     time.sleep(0.1)
     updated = read_reg(0x00)
-    test(hsecs['data'] != updated['data'], True, "Hsecs updates after counter is enabled.")
+    test(secs['data'] != updated['data'], True, "secs updates after counter is enabled.")
+
+    # Init interrupts - 1 second
+    write_reg(0x11, 0x1C)
+    write_reg(0x10, 0x08)
+    intsOn1 = read_reg(0x10)
+    test(intsOn1['interrupt'], SET, "Interrupts enabled - init int")
+    test(intsOn1['data'][0:5], b"00000", "Interrupts enabled - init mask")
+
+    time.sleep(1.1)
+    intsOn2 = read_reg(0x10)
+    test(intsOn2['interrupt'], UNSET, "Interrupts enabled - trigger int")
+    test(intsOn2['data'][0:5], b"10001", "Interrupts enabled - trigger mask")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
